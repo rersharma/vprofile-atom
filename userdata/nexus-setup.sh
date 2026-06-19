@@ -1,9 +1,6 @@
 #!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status
 set -e
 
-# Define variables
 NEXUS_URL="https://download.sonatype.com/nexus/3/nexus-3.93.0-06-linux-x86_64.tar.gz"
 TAR_NAME="nexus-3.93.0-06-linux-x86_64.tar.gz"
 EXTRACTED_DIR="nexus-3.93.0-06"
@@ -13,39 +10,37 @@ echo "===================================================="
 echo " Starting Sonatype Nexus Repository Installation"
 echo "===================================================="
 
-# 1. Update system and install Java (OpenJDK 21)
-echo "[1/6] Updating system and installing OpenJDK 21..."
+# 1. System Prep
+echo "[1/5] Installing OpenJDK 21 & Wget..."
 sudo apt update -y
 sudo apt install openjdk-21-jdk wget -y
 
-# 2. Download and extract Nexus
-echo "[2/6] Downloading and extracting Nexus package..."
+# 2. Extract application files
+echo "[2/5] Downloading and extracting package..."
 cd $INSTALL_DIR
+# If cleaning up a previous failed installation attempt, uncomment the line below:
+# sudo rm -rf nexus sonatype-work
 sudo wget -q --show-progress "$NEXUS_URL"
 sudo tar -xvzf "$TAR_NAME"
-
-# Rename extracted folder to a generic name and clean up the archive
 sudo mv "$EXTRACTED_DIR" nexus
 sudo rm "$TAR_NAME"
 
-# 3. Create a dedicated system user
-echo "[3/6] Creating dedicated 'nexus' system user..."
+# 3. Handle System User & Permissions
+echo "[3/5] Configuring 'nexus' system user accounts..."
 if ! id "nexus" &>/dev/null; then
     sudo adduser --disabled-password --gecos "" nexus
-else
-    echo "User 'nexus' already exists, skipping creation."
 fi
 
-# Set proper ownership permissions
+# 4. Correctly generate the nexus.rc configurations
+echo "[4/5] Writing user constraints into runtime environment config..."
+sudo bash -c 'echo "run_as_user=\"nexus\"" > /opt/nexus/bin/nexus.rc'
+
+# Ensure complete user ownership across directories
 sudo chown -R nexus:nexus /opt/nexus
 sudo chown -R nexus:nexus /opt/sonatype-work
 
-# 4. Configure Nexus to run as the 'nexus' user
-echo "[4/6] Configuring Nexus application runner user..."
-sudo sed -i 's/#run_as_user=""/run_as_user="nexus"/' /opt/nexus/bin/nexus.rc
-
-# 5. Create Systemd Service
-echo "[5/6] Generating systemd service unit configuration..."
+# 5. Create Systemd Service Descriptor
+echo "[5/5] Generating systemd unit wrapper..."
 sudo bash -c 'cat > /etc/systemd/system/nexus.service <<EOF
 [Unit]
 Description=nexus service
@@ -63,17 +58,11 @@ Restart=on-abort
 WantedBy=multi-user.target
 EOF'
 
-# 6. Reload daemon and launch service
-echo "[6/6] Reloading systemd daemons and starting Nexus..."
+echo "Reloading configurations and triggering startup..."
 sudo systemctl daemon-reload
 sudo systemctl enable nexus
-sudo systemctl start nexus
+sudo systemctl restart nexus
 
 echo "===================================================="
-echo " Nexus Installation Completed Successfully!"
-echo "===================================================="
-echo "Please wait a minute or two for the web app to fully initialize."
-echo "You can access the console at: http://YOUR_SERVER_IP:8081"
-echo "Fetch your initial temporary admin password using:"
-echo "sudo cat /opt/sonatype-work/nexus3/admin.password"
+echo " Setup complete! Access your console at port :8081"
 echo "===================================================="
